@@ -2,8 +2,13 @@ import math
 import random
 import time
 from typing import List, Tuple
+import json 
+import os # <--- NEW IMPORT
 
 from game import Connect4Game
+
+# Define the filename for the search tree JSON
+TREE_FILE_NAME = "search_tree.json"
 
 class Node:
     # Node class - data structure
@@ -214,10 +219,24 @@ class AIAgent:
         if best_move_col is None:
             raise Exception("No valid move found by AI. This should not happen.")
 
+        # Export the Tree's JSON to a file
+        tree_json_data = self.to_json_structure(root_node)
+        try:
+            with open(TREE_FILE_NAME, 'w') as f:
+                json.dump(tree_json_data, f, indent=2)
+            print(f"\n--- Game Tree Exported ---")
+            print(f"Tree structure saved to {TREE_FILE_NAME}")
+            print(f"Open 'tree_visualizer.html' and click 'Load Tree' to view the visualization.")
+            print("--------------------------")
+        except IOError as e:
+            print(f"ERROR: Could not write tree JSON to file {TREE_FILE_NAME}. {e}")
+            print("Printing to console as fallback:")
+            print(json.dumps(tree_json_data, indent=2))
+        
         # Print the Tree
         print("\n--- Game Tree ---")
         self.print_tree(root_node)
-
+               
         # Print Stats
         print("--- AI Move Statistics ---")
         print(f"Time Taken: {self.working_time:.4f} seconds")
@@ -237,6 +256,51 @@ class AIAgent:
         print(prefix + ", ".join(segments))
         for child in node.children:
             self.print_tree(child, depth + 1)
+
+    def to_json_structure(self, node, is_maximizing=None):
+        """Recursively converts a Node structure to a serializable dictionary (JSON structure)."""
+        if node is None:
+            return {}
+
+        node_type = getattr(node, "node_type", "decision")
+        move = getattr(node, "move", -1)
+        value = getattr(node, "heuristic_value", None)
+        probability = getattr(node, "probability", 1.0)
+        
+        # Determine the player for Decision nodes
+        player = None
+        if node_type == "decision":
+            # Using the absolute depth is simpler for labeling in the JSON:
+            is_maximizing = (node.get_depth() % 2 == 0) # Assumes alternating MAX/MIN turns starting with MAX at depth 0
+            
+            player = "MAX (AI)" if is_maximizing else "MIN (Human)"
+        
+        # For chance nodes, the player is not a factor.
+        elif node_type == "chance":
+            player = "Chance"
+
+        data = {
+            "move": move,
+            "type": node_type,
+            "player": player,
+            "value": round(value, 4) if value is not None else "N/A",
+            "probability": round(probability, 4) if probability != 1.0 else 1.0,
+        }
+        
+        children_list = []
+        # Optimization: Limit recursion for JSON structure to prevent massive output file sizes
+        # The limit is set to Depth 6.
+        if node.get_depth() <= 6:
+            for child in node.children:
+                children_list.append(self.to_json_structure(child))
+        
+        data["children"] = children_list
+
+        # Note if the branch was stopped for size reasons
+        if node.get_depth() == 6 and len(node.children) > 0: 
+            data["truncated"] = True
+            
+        return data
 
     def print_statistics(self):
         print(f"Nodes Expanded: {self.nodes_expanded}")
@@ -429,6 +493,10 @@ class AIAgent:
         expected_value = 0.0
         total_weight = 0.0
 
+        # Note: The is_maximizing flag logic needs to be correctly managed here for the recursive call.
+        # Since this is a chance layer, the next decision is the opposite of the player who just moved.
+        next_is_maximizing = not is_ai_turn
+
         for actual_col, probability in probabilities:
             if not game.is_valid_move(actual_col):
                 continue
@@ -436,10 +504,9 @@ class AIAgent:
             next_state.drop_piece(actual_col, piece)
             outcome_node = Node(next_state, parent=selection_node, move=actual_col, probability=probability)
             selection_node.add_child(outcome_node)
-            # After a chance outcome, we move to the opposite decision player.
-            # We also reduce depth here so that a full Max-Chance-Min-Chance cycle
-            # corresponds to depth = 4 levels from the root.
-            child_value = self.expectiminimax(outcome_node, depth - 1, not is_ai_turn)
+            
+            # Call expectiminimax which correctly handles MAX/MIN based on the flag
+            child_value = self.expectiminimax(outcome_node, depth - 1, next_is_maximizing)
             expected_value += probability * child_value
             total_weight += probability
 
