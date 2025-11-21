@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Connect 4 Search Tree Visualizer (D3 Graph)</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Load D3.js for Graph Visualization -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+    <style>
+        /* Custom styles for the D3 tree nodes */
+        .node circle {
+            cursor: pointer;
+            stroke-width: 1.5px;
+        }
+        .node text {
+            font: 10px sans-serif;
+            pointer-events: none;
+            text-anchor: middle;
+            fill: #444;
+            font-weight: bold;
+        }
+        .link {
+            fill: none;
+            stroke: #ccc;
+            stroke-width: 1.5px;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-8 font-sans">
+
+    <div class="max-w-7xl mx-auto bg-white shadow-xl rounded-xl p-8">
+        <h1 class="text-3xl font-extrabold text-blue-800 mb-4">Connect 4 Search Tree Visualizer (D3 Graph)</h1>
+        <p class="text-gray-600 mb-6">This is an interactive graph visualization. The Python AI Agent saves data to <code class="bg-gray-200 p-1 rounded font-mono text-sm">search_tree.json</code>. Click the button to load the latest tree structure. Click on any node to collapse or expand its branch.</p>
+
+        <!-- Load Button Area -->
+        <div class="mb-6 p-4 border border-gray-200 rounded-lg">
+            <button onclick="loadTree()" id="load-button" class="mt-3 px-6 py-3 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-150 flex items-center">
+                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                Load Latest Tree (search_tree.json)
+            </button>
+            <div id="status-message" class="mt-2 text-sm font-medium text-gray-700">Ready to load the tree.</div>
+            <div id="error-message" class="mt-2 text-red-600 font-medium hidden"></div>
+        </div>
+
+        <!-- Visualization Output Area - SVG Container -->
+        <div id="tree-output" class="p-4 border-t border-gray-200 mt-4 overflow-x-auto">
+            <h2 class="text-2xl font-bold text-gray-800 mb-4">Search Tree Graph</h2>
+            <!-- The D3 visualization will be rendered in this SVG -->
+            <svg id="tree-svg" width="100%" height="600"></svg>
+        </div>
+    </div>
+
+    <script>
+        const TREE_FILE_PATH = 'search_tree.json';
+        
+        // D3 setup constants
+        const margin = {top: 40, right: 90, bottom: 40, left: 90},
+              baseWidth = 1000, 
+              baseHeight = 600;
+        
+        // Target the SVG and create the main group
+        const svg = d3.select("#tree-svg")
+                      .attr("width", baseWidth + margin.right + margin.left)
+                      .attr("height", baseHeight + margin.top + margin.bottom),
+              g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+        let i = 0, // Counter for node IDs
+            duration = 750, // Animation duration
+            root; // Root node data
+
+        // Set up the tree layout (horizontal orientation: size is [height, width])
+        const treemap = d3.tree().size([baseHeight, baseWidth]);
+
+        // Define color scheme for node types
+        const NODE_COLORS = {
+            'MAX (AI)': '#1f77b4',
+            'MIN (Human)': '#d62728',
+            'Chance': '#ff7f0e',
+            'Decision': '#444444' 
+        };
+        
+        const NODE_RADIUS = (type) => (type === 'Chance' ? 8 : 10);
+
+        // Standard recursive collapse function (hides everything below current node)
+        function collapse(d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+                d._children.forEach(collapse);
+            }
+        }
+        
+        async function loadTree() {
+            const statusElement = document.getElementById('status-message');
+            const errorElement = document.getElementById('error-message');
+            const loadButton = document.getElementById('load-button');
+            
+            errorElement.classList.add('hidden');
+            statusElement.textContent = 'Loading...';
+            loadButton.disabled = true;
+
+            try {
+                const response = await fetch(TREE_FILE_PATH);
+                
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch ${TREE_FILE_PATH}. Make sure the game is running and the AI has made at least one move.`);
+                }
+                
+                const treeData = await response.json();
+
+                if (treeData && typeof treeData === 'object') {
+                    // Converts the flat JSON data into a D3 hierarchical structure
+                    root = d3.hierarchy(treeData, function(d) { return d.children; });
+                    root.x0 = baseHeight / 2;
+                    root.y0 = 0;
+                    
+                    // --- INITIAL VISUALIZATION SETUP ---
+                    // 1. Collapse the entire tree below the root.
+                    if (root.children) {
+                        root.children.forEach(collapse);
+                    }
+                    // 2. Now, explicitly expand the first level (the direct children of the root).
+                    if (root._children) {
+                        root.children = root._children;
+                        root._children = null;
+                    }
+                    // -----------------------------------
+                    
+                    update(root); // Draw the tree, starting from the root
+                    statusElement.textContent = `Successfully loaded tree from ${TREE_FILE_PATH}. Click nodes to expand.`;
+                } else {
+                    throw new Error('Parsed data is not a valid JSON object.');
+                }
+            } catch (e) {
+                errorElement.textContent = `Load Error: ${e.message}`;
+                errorElement.classList.remove('hidden');
+                statusElement.textContent = 'Failed to load tree.';
+                console.error("D3 Load Error:", e);
+            } finally {
+                loadButton.disabled = false;
+            }
+        }
+        
+        // Toggles children on click.
+        function click(event, d) {
+            if (d.children) {
+                d._children = d.children;
+                d.children = null;
+            } else {
+                d.children = d._children;
+                d._children = null;
+            }
+            update(d);
+        }
+
+        // Core drawing function
+        function update(source) {
+            // Assigns the x and y position for the nodes
+            const treeData = treemap(root);
+
+            // Compute the new tree layout.
+            const nodes = treeData.descendants(),
+                  links = treeData.descendants().slice(1);
+
+            // Normalize for fixed-depth (horizontal position).
+            nodes.forEach(function(d){ d.y = d.depth * 180});
+
+            // ****************** Nodes section ******************
+
+            // Update the nodes
+            const node = g.selectAll('g.node')
+                .data(nodes, function(d) {
+                    // Ensure unique ID for every node. This is crucial for D3 stability.
+                    return d.id || (d.id = ++i); 
+                });
+
+            // Enter any new nodes at the parent's previous position (source).
+            const nodeEnter = node.enter().append('g')
+                .attr('class', 'node')
+                .attr("transform", function(d) {
+                    return "translate(" + source.y0 + "," + source.x0 + ")";
+                });
+                
+            // Add Circle (or other shape) for the nodes
+            nodeEnter.append('circle')
+                .attr('r', 1e-6)
+                .style("fill", function(d) {
+                    return d._children ? NODE_COLORS[d.data.player] : "#fff";
+                })
+                .style("stroke", function(d) {
+                    return NODE_COLORS[d.data.player] || NODE_COLORS['Decision'];
+                });
+
+            // Add labels for the nodes
+            nodeEnter.append('text')
+                .attr("dy", ".35em")
+                .attr("y", function(d) { 
+                    return d.children || d._children ? -15 : 15;
+                })
+                .attr("text-anchor", "middle")
+                .text(function(d) { 
+                    let text = `${d.data.player.split(' ')[0]}: ${d.data.value}`;
+                    if (d.data.move !== -1) {
+                        text = `Move ${d.data.move}: ${text}`;
+                    }
+                    if (d.data.probability !== 1.0) {
+                        text += ` (P: ${d.data.probability})`;
+                    }
+                    if (d.data.truncated) {
+                        text += ` [...]`;
+                    }
+                    return text;
+                });
+
+            // UPDATE: Merge enter and update selections
+            const nodeUpdate = nodeEnter.merge(node);
+            
+            // ATTACH CLICK HANDLER: Use the two-argument form for D3 v7
+            // This is the critical line that ensures interactivity works on all nodes
+            nodeUpdate.on('click', click); 
+
+            // Transition to the new position.
+            nodeUpdate.transition()
+                .duration(duration)
+                .attr("transform", function(d) { 
+                    return "translate(" + d.y + "," + d.x + ")";
+                 });
+
+            // Update Node attributes and style
+            nodeUpdate.select('circle')
+                .attr('r', function(d) { return NODE_RADIUS(d.data.player.split(' ')[0]); })
+                .style("fill", function(d) {
+                    return d._children ? NODE_COLORS[d.data.player] : "#fff";
+                })
+                .style("stroke", function(d) {
+                    return NODE_COLORS[d.data.player] || NODE_COLORS['Decision'];
+                })
+                .attr('cursor', function(d) { 
+                    return d.children || d._children ? 'pointer' : 'default'; 
+                });
+
+
+            // Remove any exiting nodes
+            const nodeExit = node.exit().transition()
+                .duration(duration)
+                .attr("transform", function(d) {
+                    // Use the current position for the exit transition target
+                    return "translate(" + source.y + "," + source.x + ")"; 
+                })
+                .remove();
+
+            // On exit reduce the node circles size to 0
+            nodeExit.select('circle').attr('r', 1e-6);
+
+            // On exit reduce the opacity of text labels
+            nodeExit.select('text').style('fill-opacity', 1e-6);
+
+            // ****************** Links section ******************
+
+            // Update the links
+            const link = g.selectAll('path.link')
+                .data(links, function(d) { return d.id; });
+
+            // Enter any new links at the parent's previous position (source).
+            const linkEnter = link.enter().insert('path', "g")
+                .attr("class", "link")
+                .attr('d', function(d){
+                    const o = {x: source.x0, y: source.y0};
+                    return diagonal(o, o);
+                });
+
+            // UPDATE: Merge enter and update selections
+            const linkUpdate = linkEnter.merge(link);
+
+            // Transition back to the node's new position.
+            linkUpdate.transition()
+                .duration(duration)
+                .attr('d', function(d){ return diagonal(d, d.parent) });
+
+            // Remove any exiting links
+            link.exit().transition()
+                .duration(duration)
+                .attr('d', function(d) {
+                    const o = {x: source.x, y: source.y};
+                    return diagonal(o, o);
+                })
+                .remove();
+
+            // Store the new positions as old positions for the next transition.
+            nodes.forEach(function(d){
+                d.x0 = d.x;
+                d.y0 = d.y;
+            });
+
+            // Creates a curved (diagonal) path from parent to the child nodes
+            function diagonal(s, d) {
+                return `M ${s.y} ${s.x}
+                        C ${(s.y + d.y) / 2} ${s.x},
+                          ${(s.y + d.y) / 2} ${d.x},
+                          ${d.y} ${d.x}`
+            }
+        }
+        
+        document.addEventListener('DOMContentLoaded', () => {
+             // Set initial viewbox to allow resizing
+             svg.attr("viewBox", `0 0 ${baseWidth + margin.right + margin.left} ${baseHeight + margin.top + margin.bottom}`);
+        });
+    </script>
+</body>
+</html>
