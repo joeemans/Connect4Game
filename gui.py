@@ -274,7 +274,7 @@ def main():
     use_stochastic_physics = (algorithm_key == "expectiminimax")
 
     def refresh_visualize_button():
-        draw_visualize_button(screen, viz_button_rect, button_font, ai.get_last_tree() is not None)
+        # draw_visualize_button(screen, viz_button_rect, button_font, ai.get_last_tree() is not None)
         pygame.display.update(viz_button_rect)
     
     draw_board(screen, game.board, ROWS, COLS, SQUARESIZE, RADIUS)
