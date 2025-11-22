@@ -6,7 +6,6 @@ import json
 import os # <--- NEW IMPORT
 
 from game import Connect4Game
-from concurrent.futures import ProcessPoolExecutor, as_completed # <<< NEW IMPORT
 
 # Define the filename for the search tree JSON
 TREE_FILE_NAME = "search_tree.json"
@@ -37,23 +36,12 @@ class Node:
     
 
 class AIAgent:  
-    def __init__(self,initial_game_state=None):
+    def __init__(self):
         # initialize AI's models or parameters here
         #self.game = game
         self.heuristic_enabled = False
         self.last_root = None
         self.reset_statistics() # Initialize statistics
-        # Assuming a standard 6x7 board setup at initialization
-        if initial_game_state:
-            ROWS = initial_game_state.rows
-            COLS = initial_game_state.cols
-        else:
-            # Fallback for systems that don't pass the game state
-            ROWS = 6 
-            COLS = 7
-
-        self._static_col_weights = self._build_column_weights(COLS)
-        self._static_row_weights = self._build_column_weights(ROWS)
 
     def set_heuristic_enabled(self, enabled: bool):
         # Toggle heuristic evaluation on or off
@@ -128,12 +116,6 @@ class AIAgent:
         self.nodes_expanded += 1 # Count this node as expanded
         valid_moves = game.get_valid_moves()
 
-        # >>> START OF OPTIMIZATION: Move Ordering for Minimax <<<
-        # Sort moves to prioritize central columns (e.g., column 3 in a 7-column board).
-        center_col = (game.cols - 1) / 2
-        valid_moves.sort(key=lambda col: abs(col - center_col))
-        # >>> END OF OPTIMIZATION <<<
-
         if maximizing_player:
             value = -math.inf
             for move_index, col in enumerate(valid_moves):
@@ -181,12 +163,6 @@ class AIAgent:
         if not valid_moves:
             node.heuristic_value = self._evaluate_state(game)
             return node.heuristic_value
-        
-        # >>> START OF OPTIMIZATION: Move Ordering for Minimax <<<
-        # Sort moves to prioritize central columns (e.g., column 3 in a 7-column board).
-        center_col = (game.cols - 1) / 2
-        valid_moves.sort(key=lambda col: abs(col - center_col))
-        # >>> END OF OPTIMIZATION <<<
 
         if maximizing_player:
             best_value = -math.inf
@@ -204,131 +180,74 @@ class AIAgent:
                 best_value = min(best_value, expected_value)
             node.heuristic_value = best_value
             return best_value
-    
+ 
     def get_move(self, game, depth_k, algorithm_type):
-            # Entry point for AI to get its move
-            print(f"\nAI is thinking (Algorithm: {algorithm_type}, Depth: {depth_k})...")
-            
-            # Reset stats and start timer
-            self.reset_statistics()
-            start_time = time.time()
-            
-            # Create the root node
-            root_game_state = self._copy_game_state(game) 
-            root_node = Node(root_game_state, move=-1) 
-            self.last_root = root_node
-            
-            # Get all possible initial moves from the root state
-            valid_moves = root_game_state.get_valid_moves()
-            
-            # Initialize containers for sequential/parallel execution
-            best_score = -math.inf
-            best_move_col = None
-            
-            # --- PHASE 1: Prepare/Execute Search ---
-            
-            if algorithm_type == "minimax":
-                print("Running Pure Minimax in Parallel (Root-Level) to meet time constraints...")
-                
-                # Manually create the first layer of children for parallel execution
-                initial_children = []
-                for col in valid_moves:
-                    new_game = self._copy_game_state(root_game_state)
-                    new_game.drop_piece(col, new_game.AI)
-                    child_node = Node(new_game, parent=root_node, move=col)
-                    root_node.add_child(child_node)
-                    initial_children.append(child_node)
-                    
-                # Use a ProcessPoolExecutor to run search for each initial move on a separate core
-                with ProcessPoolExecutor(max_workers=min(len(valid_moves), 7)) as executor:
-                    
-                    # Submit minimax tasks for each initial move. Note: The minimax function
-                    # will use a different AIAgent copy in each process, so statistics 
-                    # (nodes expanded) will not be aggregated here.
-                    future_to_node = {
-                        executor.submit(self.minimax, child, depth_k - 1, False): child 
-                        for child in initial_children
-                    }
-                    
-                    # Collect results as they complete
-                    for future in as_completed(future_to_node):
-                        child_node = future_to_node[future]
-                        try:
-                            score = future.result()
-                            child_node.heuristic_value = score # Update the original node with the result
-                            
-                            if score > best_score:
-                                best_score = score
-                                best_move_col = child_node.move
-                        except Exception as exc:
-                            print(f'Move {child_node.move} generated an exception: {exc}')
+        # Entry point for AI to get its move
+        print(f"\nAI is thinking (Algorithm: {algorithm_type}, Depth: {depth_k})...")
+        
+        # Reset stats and start timer
+        self.reset_statistics()
+        start_time = time.time()
+        
+        # Create the root node
+        root_game_state = self._copy_game_state(game) # IMPORTANT: We are using a deep copy so the original game object is not changed
+        root_node = Node(root_game_state, move=-1) # Root has no move leading to it
+        self.last_root = root_node
 
-                root_node.heuristic_value = best_score # Update root node's value
-                
-                # NOTE: Due to multiprocessing, `self.nodes_expanded` is not updated here.
-                # To preserve the print structure, you might keep the sequential search for
-                # Alpha-Beta and Expectiminimax which correctly update the stats object.
+        if algorithm_type == "minimax":
+            best_score = self.minimax(root_node, depth_k, True)
+        elif algorithm_type == "alpha_beta":
+            best_score = self.minimax_alpha_beta(root_node, depth_k, -math.inf, math.inf, True)
+        elif algorithm_type == "expectiminimax":
+            best_score = self.expectiminimax(root_node, depth_k, True)
+        elif algorithm_type == "random":
+            return self.get_random_move(root_game_state)
+        else:
+            raise ValueError("Unknown algorithm type")
 
-            elif algorithm_type == "alpha_beta":
-                best_score = self.minimax_alpha_beta(root_node, depth_k, -math.inf, math.inf, True)
-                
-            elif algorithm_type == "expectiminimax":
-                best_score = self.expectiminimax(root_node, depth_k, True)
-                
-            elif algorithm_type == "random":
-                return self.get_random_move(root_game_state)
-            
-            else:
-                raise ValueError("Unknown algorithm type")
+        # Stop timer and calculate duration
+        end_time = time.time()
+        self.working_time = end_time - start_time
+        
+        best_move_col = None
+        for child in root_node.children:
+            if child.heuristic_value == best_score:
+                best_move_col = child.move
+                break
+        
+        # Failsafe: if no move matches, pick a random one
+        if best_move_col is None:
+            raise Exception("No valid move found by AI. This should not happen.")
 
-            # --- PHASE 2: Finalize Move and Prints ---
-            
-            # Stop timer and calculate duration
-            end_time = time.time()
-            self.working_time = end_time - start_time
-            
-            # Determine the best move (necessary for sequential searches, but also used by parallel)
-            if best_move_col is None:
-                for child in root_node.children:
-                    if child.heuristic_value == best_score:
-                        best_move_col = child.move
-                        break
-            
-            # Failsafe: if no move matches, pick a random one
-            if best_move_col is None:
-                # Revert to sequential move finding using the best_score found
-                if not valid_moves:
-                    raise Exception("No valid move found by AI. This should not happen.")
-                best_move_col = random.choice(valid_moves)
-                print("WARNING: Failsafe triggered. Could not match score to move. Using a random valid move.")
+        # Export the Tree's JSON to a file
+        tree_json_data = self.to_json_structure(root_node)
+        try:
+            with open(TREE_FILE_NAME, 'w') as f:
+                json.dump(tree_json_data, f, indent=2)
+            print(f"\n--- Game Tree Exported ---")
+            print(f"Tree structure saved to {TREE_FILE_NAME}")
+            print(f"Open 'tree_visualizer.html' and click 'Load Tree' to view the visualization.")
+            print("--------------------------")
+        except IOError as e:
+            print(f"ERROR: Could not write tree JSON to file {TREE_FILE_NAME}. {e}")
+            print("Printing to console as fallback:")
+            print(json.dumps(tree_json_data, indent=2))
+        
+        # # Print the Tree
+        # print("\n--- Game Tree ---")
+        # self.print_tree(root_node)
+               
+        # Print Stats
+        print("--- AI Move Statistics ---")
+        print(f"Time Taken: {self.working_time:.4f} seconds")
+        print(f"Nodes Expanded: {self.nodes_expanded}")
+        print(f"Max Depth Reached: {self.max_depth_reached} from start node")
+        print(f"Nodes Pruned (Alpha-Beta): {self.pruned_nodes}")
+        print(f"Best Score Found: {best_score}")
+        print(f"Chosen Move (Column): {best_move_col}")
 
-            # Export the Tree's JSON to a file
-            # NOTE: The resulting tree from parallel search will be incomplete beyond the first layer.
-            # This part is kept to satisfy the assignment requirement.
-            tree_json_data = self.to_json_structure(root_node)
-            try:
-                # ... (Existing JSON export code) ...
-                with open(TREE_FILE_NAME, 'w') as f:
-                    json.dump(tree_json_data, f, indent=2)
-                print(f"\n--- Game Tree Exported ---")
-                print(f"Tree structure saved to {TREE_FILE_NAME}")
-                print(f"Open 'tree_visualizer.html' and click 'Load Tree' to view the visualization.")
-                print("--------------------------")
-            except IOError as e:
-                print(f"ERROR: Could not write tree JSON to file {TREE_FILE_NAME}. {e}")
-                print("Printing to console as fallback:")
-                print(json.dumps(tree_json_data, indent=2))
-                
-            # Print Stats (The node count will be inaccurate for parallel Minimax, but time taken will be correct)
-            print("--- AI Move Statistics ---")
-            print(f"Time Taken: {self.working_time:.4f} seconds")
-            print(f"Nodes Expanded: {self.nodes_expanded}")
-            print(f"Max Depth Reached: {self.max_depth_reached} from start node")
-            print(f"Nodes Pruned (Alpha-Beta): {self.pruned_nodes}")
-            print(f"Best Score Found: {best_score}")
-            print(f"Chosen Move (Column): {best_move_col}")
+        return best_move_col
 
-            return best_move_col
     def print_tree(self, node, depth=0):
         prefix = " " * depth * 2
         segments = [f"Move: {node.move}", f"Type: {node.node_type}", f"Value: {node.heuristic_value}"]
@@ -411,9 +330,6 @@ class AIAgent:
         human_score, ai_score = game.count_connected_fours()
         return ai_score - human_score
 
-
-# ...
-
     def _evaluate_with_heuristic(self, game):
         # Heuristic evaluation. Our heuristic is divided to:
         # 1. Completed connected-fours (weighted heavily)
@@ -424,23 +340,26 @@ class AIAgent:
         board = game.board
         ROWS, COLS = board.shape
 
-        # --- 1. Completed connected-fours ---
+        # Completed connected-fours (scaled by 1000 as requested)
         human_score, ai_score = game.count_connected_fours()
         score = (ai_score - human_score) * 1000
 
-        # --- 2. Positional Map (Center/Row Weights),Use Pre-calculated Weights ---
-        col_weights = self._static_col_weights # <<< Use pre-calculated
-        row_weights = self._static_row_weights # <<< Use pre-calculated
-        
+        # Build a column weight map: center columns get highest weight, borders get 1.
+        col_weights = self._build_column_weights(COLS)
+
+        # Build a rows weight map: similar to columns
+        row_weights = self._build_column_weights(ROWS)
+
+        # Add weight maps
         score += self._score_positional_map(board, game.AI, col_weights, row_weights)
         score -= self._score_positional_map(board, game.HUMAN, col_weights, row_weights)
-        end_position = time.time()
 
-        # --- 3. Threat Evaluation (Windows) ---
+        # We evaluate windows from AI perspective and subtract symmetric values for HUMAN.
         score += self._score_threats(board, game.AI)
         score -= self._score_threats(board, game.HUMAN)
-        
+
         return score
+
     
     def _build_column_weights(self, cols: int):
         # Assign higher weights to central columns and weight 1 to border columns.

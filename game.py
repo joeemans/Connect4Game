@@ -142,34 +142,34 @@ class Connect4Game:
         self.board = board.copy()
 
 
-### TESTING
+# ### TESTING
 
-# Define constants for readability
-EMPTY = 0
-HUMAN = 1 # Red
-AI = 2    # Yellow
+# # Define constants for readability
+# EMPTY = 0
+# HUMAN = 1 # Red
+# AI = 2    # Yellow
 
-# This is the board from the image, represented as a numpy array.
-# Row 0 is the bottom-most row.
-test_board = np.array([
-    [HUMAN,    AI,    HUMAN, AI,    HUMAN,    AI,    AI],    # Row 0
-    [AI,    AI,    HUMAN, HUMAN, AI,    HUMAN, AI],    # Row 1
-    [HUMAN, HUMAN, HUMAN, HUMAN, AI, HUMAN, AI],    # Row 2
-    [HUMAN, HUMAN, HUMAN, AI,    HUMAN,    AI, HUMAN],    # Row 3
-    [HUMAN, HUMAN, AI,    AI,    AI,    HUMAN, AI],    # Row 4
-    [HUMAN, AI,    HUMAN, AI,    AI,    AI, AI]     # Row 5 (Top)
-], dtype=np.int8)
-row = 2
-col = 3
-sub_array = np.flipud(test_board[row:row+4, col-3:col+1])
-print(sub_array)
+# # This is the board from the image, represented as a numpy array.
+# # Row 0 is the bottom-most row.
+# test_board = np.array([
+#     [HUMAN,    AI,    HUMAN, AI,    HUMAN,    AI,    AI],    # Row 0
+#     [AI,    AI,    HUMAN, HUMAN, AI,    HUMAN, AI],    # Row 1
+#     [HUMAN, HUMAN, HUMAN, HUMAN, AI, HUMAN, AI],    # Row 2
+#     [HUMAN, HUMAN, HUMAN, AI,    HUMAN,    AI, HUMAN],    # Row 3
+#     [HUMAN, HUMAN, AI,    AI,    AI,    HUMAN, AI],    # Row 4
+#     [HUMAN, AI,    HUMAN, AI,    AI,    AI, AI]     # Row 5 (Top)
+# ], dtype=np.int8)
+# row = 2
+# col = 3
+# sub_array = np.flipud(test_board[row:row+4, col-3:col+1])
+# print(sub_array)
 
-game = Connect4Game(6, 7)
-game.paste_board(test_board)
-humanScore, aiScore = game.count_connected_fours()
-winner = game.determine_winner()
-print("Test Board:")
-game.print_board()
-print(f"Human connected-fours: {humanScore}")
-print(f"AI connected-fours: {aiScore}")
-print(f"Winner: {winner}")
+# game = Connect4Game(6, 7)
+# game.paste_board(test_board)
+# humanScore, aiScore = game.count_connected_fours()
+# winner = game.determine_winner()
+# print("Test Board:")
+# game.print_board()
+# print(f"Human connected-fours: {humanScore}")
+# print(f"AI connected-fours: {aiScore}")
+# print(f"Winner: {winner}")

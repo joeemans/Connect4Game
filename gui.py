@@ -267,7 +267,7 @@ def main():
     clock = pygame.time.Clock()
 
     game = Connect4Game(ROWS, COLS)
-    ai = AIAgent()
+    ai = AIAgent(initial_game_state=game)
     ai.set_heuristic_enabled(heuristic_enabled)
     game_over = False
     game_summary_displayed = False
